@@ -12,6 +12,7 @@ require(e1071)
 require(insight)
 require(dplyr)
 require(Hmisc)
+require(car)
 require(ggeffects)
 
 #==============================================================================================#
@@ -26,9 +27,18 @@ seed1 <- cbind(seed1,seed_log)
 #DISTRIBUTION
 hist(seed1$weight,breaks = 200)
 
-#SUMMARIZE 
+#SUMMARY TABLES 
 exp_sum <- summaryBy(pop+weight~pop+ssp+garden+year, data = seed1,FUN=c(mean,length))
 exp_sum2 <- summaryBy(weight~ssp+garden+year, data = seed1,FUN=c(mean,min,max))
+
+#EVALUATING VARIANCE IN SEED SUBSAMPLES
+subsamp1 <- summaryBy(weight~subsamp+family+pop+ssp+garden+year, data = seed1,FUN=c(mean,sd))
+aov1 <- aov(weight~pop*subsamp+garden*year, data=seed1)
+Anova(aov1)
+aov_sum <- Anova(aov1)
+capture.output(aov_sum, file = "anova_summary.txt")
+
+#SEED WEIGHT SHOW NO SIGNIFICANT VARIATION IN SUBSAMPLE
 
 #write.csv(exp_sum2,file = "seed_exp_summary.csv")
 #=================================================================================================#
@@ -60,29 +70,42 @@ pop_sum <- summaryBy(weight+MAT+MWMT+MCMT+TD+MAP+MSP+AHM+SHM+DD0+DD5+DDL18+DDG18
 data_pop=with(popgrw, data.frame(MAT,MWMT,MCMT,TD,MAP,MSP,AHM,SHM,DD0,DD5,DDL18,DDG18,NFFD,bFFP,eFFP,FFP,PAS,EMT,EXT,MAR,Eref,CMD,RH,PPT_wt,PPT_sp,PPT_sm,PPT_at,DD0_wt,DD5_sm,weight)) 
 cor <- cor(data_pop)
 
+#Scaled DD0_wt to eliminate warning in GLMM
+scDD0_wt <- seed1$DD0_wt*0.1
 ### HIGH VAR = DD0_wt, PPT_wt, no interaction
 #=================================================================================================#
 ###GLMM 
 sseed1 <- glmmTMB(
-  weight ~ ssp + PPT_sm + (1 | garden:year) + (1|pop:(garden:year)), 
+  weight ~ type + PPT_sm + (1 | garden:year) + (1|pop:(garden:year)), 
   ziformula = ~1, 
   family = tweedie(), 
   data = seed1)
 
 sseed2 <- glmmTMB(
-  weight ~ ssp + DD0_wt + PPT_sm + (1 | garden:year) + (1|pop:(garden:year)), 
+  weight ~ type + scDD0_wt + PPT_sm + (1 | garden:year) + (1|pop:(garden:year)), 
   ziformula = ~1, 
   family = tweedie(), 
   data = seed1)
 
 sseed3 <- glmmTMB(
-  weight ~ ssp + (1 | garden:year) + (1|pop:(garden:year)), 
+  weight ~ type + (1 | garden:year) + (1|pop:(garden:year)), 
   ziformula = ~1, 
   family = tweedie(), 
   data = seed1)
 
 #LRT for two models
 anova(sseed1,sseed2,sseed3)
+
+#Is subspecies important? type = ploidy x species combinations
+sseed2.1 <- glmmTMB(
+  weight ~ ploidy + scDD0_wt + PPT_sm + (1 | garden:year) + (1|pop:(garden:year)), 
+  ziformula = ~1, 
+  family = tweedie(), 
+  data = seed1)
+
+anova(sseed2,sseed2.1)
+#No, type AIC higher for subspecies x ploidy model
+
 #BEST MODEL = sseed2
 summary(sseed2)
 
